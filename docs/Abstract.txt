@@ -1,0 +1,2 @@
+Abstract:
+This project automates CI/CD for a Flask web app using Jenkins, Docker and Ansible.

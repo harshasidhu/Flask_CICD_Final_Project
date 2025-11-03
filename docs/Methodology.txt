@@ -1,0 +1,2 @@
+Methodology:
+GitHub -> Jenkins -> Docker build -> DockerHub -> Ansible deploy to EC2.

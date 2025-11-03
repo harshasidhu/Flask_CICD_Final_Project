@@ -1,0 +1,2 @@
+Conclusion:
+Project demonstrates practical DevOps pipeline.

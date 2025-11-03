@@ -1,0 +1,2 @@
+Implementation:
+App under app/, Jenkinsfile used to build/push, ansible/deploy.yml pulls image and runs container.
