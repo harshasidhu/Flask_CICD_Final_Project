@@ -7,7 +7,7 @@ pipeline {
     }
 
     stages {
-        stage('Clone Repository') {
+        stage('Checkout SCM') {
             steps {
                 git branch: 'main', url: 'https://github.com/harshasidhu/Flask_CICD_Final_Project.git'
             }
@@ -16,22 +16,31 @@ pipeline {
         stage('Build Docker Image') {
             steps {
                 script {
-                    // ✅ Build using the Dockerfile inside app/
+                    // ✅ Build image using Dockerfile inside app folder
                     sh 'docker build -t $IMAGE_NAME -f app/Dockerfile app'
                 }
             }
         }
 
-        stage('Push to Docker Hub') {
+        stage('Login to Docker Hub') {
             steps {
                 script {
-                    sh 'echo $DOCKERHUB_CREDENTIALS_PSW | docker login -u $DOCKERHUB_CREDENTIALS_USR --password-stdin'
+                    sh '''
+                    echo $DOCKERHUB_CREDENTIALS_PSW | docker login -u $DOCKERHUB_CREDENTIALS_USR --password-stdin
+                    '''
+                }
+            }
+        }
+
+        stage('Push Docker Image') {
+            steps {
+                script {
                     sh 'docker push $IMAGE_NAME'
                 }
             }
         }
 
-        stage('Deploy to EC2 with Ansible') {
+        stage('Deploy on EC2 using Ansible') {
             steps {
                 script {
                     sh '''
@@ -40,6 +49,15 @@ pipeline {
                     '''
                 }
             }
+        }
+    }
+
+    post {
+        success {
+            echo '✅ Build and deployment successful!'
+        }
+        failure {
+            echo '❌ Build failed. Please check logs.'
         }
     }
 }
