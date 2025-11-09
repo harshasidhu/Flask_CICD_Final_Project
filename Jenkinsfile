@@ -1,66 +1,72 @@
 pipeline {
-    agent any
+  agent any
 
-    environment {
-        DOCKER_IMAGE = 'abhishek4946/cms-project'
-        DOCKER_CREDENTIALS_ID = 'dockerhub-credentials'
-        GIT_SSL_NO_VERIFY='true'
+  environment {
+    DOCKERHUB_REPO = "harshavardhanjvv/flask-cicd-project"
+    IMAGE_TAG      = "latest"
+    EC2_HOST       = "13.203.218.231"   // your app EC2 (nginx/web/db compose host)
+  }
+
+  options {
+    timestamps()
+  }
+
+  stages {
+    stage('Checkout') {
+      steps {
+        checkout([$class: 'GitSCM',
+          branches: [[name: '*/main']],
+          userRemoteConfigs: [[
+            url: 'https://github.com/harshasidhu/Flask_CICD_Final_Project.git',
+            credentialsId: 'github-creds'
+          ]]
+        ])
+      }
     }
 
-    stages {
-        stage('Clone Repository') {
-            steps {
-                git branch: 'main', url: 'https://github.com/GantaAbhi/cms-project.git'
-            }
-        }
-
-    stage('Build Docker Image') {
-        steps {
-            script {
-                docker.build(DOCKER_IMAGE, 'app')
-                }
-            }
-        }
-
-
-        stage('Login to DockerHub') {
-            steps {
-                withCredentials([usernamePassword(credentialsId: DOCKER_CREDENTIALS_ID, usernameVariable: 'USERNAME', passwordVariable: 'PASSWORD')]) {
-                    bat "echo %PASSWORD% | docker login -u %USERNAME% --password-stdin"
-                }
-            }
-        }
-
-        stage('Push Docker Image') {
-            steps {
-                script {
-                    docker.image(DOCKER_IMAGE).push("latest")
-                }
-            }
-        }
-
-        stage('Deploy Container') {
-            steps {
-                script {
-                    bat '''
-                        docker ps -q --filter "name=cms-app" | findstr . && docker stop cms-app || echo "No running container"
-                        docker ps -a -q --filter "name=cms-app" | findstr . && docker rm cms-app || echo "No container to remove"
-                        docker run -d --name cms-app -p 5050:5000 %DOCKER_IMAGE%:latest
-                    '''
-                }
-            }
-        }
+    stage('Build Docker image') {
+      steps {
+        sh """
+          docker build -t ${DOCKERHUB_REPO}:${IMAGE_TAG} -f app/Dockerfile app
+        """
+      }
     }
 
-    post {
-        always {
-            echo 'Cleaning up...'
+    stage('Docker Hub Login & Push') {
+      steps {
+        withCredentials([usernamePassword(credentialsId: 'docker-hub-creds', usernameVariable: 'DH_USER', passwordVariable: 'DH_PASS')]) {
+          sh """
+            echo "$DH_PASS" | docker login -u "$DH_USER" --password-stdin
+            docker push ${DOCKERHUB_REPO}:${IMAGE_TAG}
+          """
         }
-        success {
-            echo '✅ CMS Project Deployed Successfully!'
-        }
-        failure {
-            echo '❌ Deployment Failed'
-        }
+      }
     }
+
+    stage('Deploy to EC2 (SSH)') {
+      steps {
+        sshagent(credentials: ['ec2-ssh-key']) {
+          sh """
+            ssh -o StrictHostKeyChecking=no ubuntu@${EC2_HOST} '
+              docker login -u ${env.DH_USER:-dummy} -p ${env.DH_PASS:-dummy} || true
+              docker pull ${DOCKERHUB_REPO}:${IMAGE_TAG}
+
+              # go to project dir and (re)start compose
+              cd ~/Flask_CICD_Final_Project || git clone https://github.com/harshasidhu/Flask_CICD_Final_Project.git && cd Flask_CICD_Final_Project
+
+              # use existing docker-compose.yml (already working on your EC2)
+              docker compose down || true
+              docker compose up -d --pull always --force-recreate
+            '
+          """
+        }
+      }
+    }
+  }
+
+  post {
+    always {
+      cleanWs()
+    }
+  }
 }
