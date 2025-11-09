@@ -1,72 +1,67 @@
 pipeline {
-  agent any
+    agent any
 
-  environment {
-    DOCKERHUB_REPO = "harshavardhanjvv/flask-cicd-project"
-    IMAGE_TAG      = "latest"
-    EC2_HOST       = "13.203.218.231"   // your app EC2 (nginx/web/db compose host)
-  }
-
-  options {
-    timestamps()
-  }
-
-  stages {
-    stage('Checkout') {
-      steps {
-        checkout([$class: 'GitSCM',
-          branches: [[name: '*/main']],
-          userRemoteConfigs: [[
-            url: 'https://github.com/harshasidhu/Flask_CICD_Final_Project.git',
-            credentialsId: 'github-creds'
-          ]]
-        ])
-      }
+    environment {
+        REPO_URL = 'https://github.com/harshasidhu/Flask_CICD_Final_Project.git'
+        DOCKER_IMAGE = 'harshavardhanjvv/flask-cicd-project'
+        DH_USER = credentials('docker-hub-creds')      // Your Docker Hub username ID in Jenkins credentials
+        DH_PASS = credentials('docker-hub-creds')      // Your Docker Hub password/token
+        EC2_SSH = 'ec2-ssh-key'                        // SSH Key ID (flask-key.pem added in Jenkins)
+        EC2_HOST = 'ubuntu@13.203.218.231'             // Replace with actual EC2 public IP
     }
 
-    stage('Build Docker image') {
-      steps {
-        sh """
-          docker build -t ${DOCKERHUB_REPO}:${IMAGE_TAG} -f app/Dockerfile app
-        """
-      }
-    }
-
-    stage('Docker Hub Login & Push') {
-      steps {
-        withCredentials([usernamePassword(credentialsId: 'docker-hub-creds', usernameVariable: 'DH_USER', passwordVariable: 'DH_PASS')]) {
-          sh """
-            echo "$DH_PASS" | docker login -u "$DH_USER" --password-stdin
-            docker push ${DOCKERHUB_REPO}:${IMAGE_TAG}
-          """
+    stages {
+        
+        stage('Clone Repository') {
+            steps {
+                git branch: 'main', url: "${REPO_URL}"
+            }
         }
-      }
-    }
 
-    stage('Deploy to EC2 (SSH)') {
-      steps {
-        sshagent(credentials: ['ec2-ssh-key']) {
-          sh """
-            ssh -o StrictHostKeyChecking=no ubuntu@${EC2_HOST} '
-              docker login -u ${env.DH_USER:-dummy} -p ${env.DH_PASS:-dummy} || true
-              docker pull ${DOCKERHUB_REPO}:${IMAGE_TAG}
-
-              # go to project dir and (re)start compose
-              cd ~/Flask_CICD_Final_Project || git clone https://github.com/harshasidhu/Flask_CICD_Final_Project.git && cd Flask_CICD_Final_Project
-
-              # use existing docker-compose.yml (already working on your EC2)
-              docker compose down || true
-              docker compose up -d --pull always --force-recreate
-            '
-          """
+        stage('Build Docker Image') {
+            steps {
+                sh "docker build -t ${DOCKER_IMAGE}:latest ."
+            }
         }
-      }
-    }
-  }
 
-  post {
-    always {
-      cleanWs()
+        stage('Login to Docker Hub') {
+            steps {
+                sh """
+                    echo ${DH_PASS} | docker login -u ${DH_USER} --password-stdin
+                """
+            }
+        }
+
+        stage('Push to Docker Hub') {
+            steps {
+                sh """
+                    docker push ${DOCKER_IMAGE}:latest
+                """
+            }
+        }
+
+        stage('Deploy on EC2') {
+            steps {
+                sshagent(credentials: ["${EC2_SSH}"]) {
+                    sh """
+                    ssh -o StrictHostKeyChecking=no ${EC2_HOST} '
+                        docker pull ${DOCKER_IMAGE}:latest &&
+                        docker stop flask-app || true &&
+                        docker rm flask-app || true &&
+                        docker run -d -p 5000:5000 --name flask-app ${DOCKER_IMAGE}:latest
+                    '
+                    """
+                }
+            }
+        }
     }
-  }
+
+    post {
+        success {
+            echo "✅ Deployment Successful!"
+        }
+        failure {
+            echo "❌ Build or Deployment Failed!"
+        }
+    }
 }
