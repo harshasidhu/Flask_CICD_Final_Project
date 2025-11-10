@@ -1,45 +1,21 @@
-- hosts: webservers
+---
+- name: Deploy Flask App using Docker
+  hosts: flask_app
   become: true
-  vars:
-    docker_image: "{{ docker_image | default('yourdockerhubusername/flask-cicd:latest') }}"
-    container_name: flask_app
   tasks:
-    - name: Ensure apt cache is updated
-      apt:
-        update_cache: yes
-        cache_valid_time: 3600
+    - name: Pull latest Docker image from Docker Hub
+      command: docker pull harshavardhanjvv/flask-cicd-project:latest
 
-    - name: Install docker.io
-      apt:
-        name: docker.io
-        state: present
+    - name: Stop old container (if running)
+      command: docker stop flask-app
+      ignore_errors: yes
 
-    - name: Ensure docker service is started
-      service:
-        name: docker
-        state: started
-        enabled: true
-
-    - name: Pull docker image
-      docker_image:
-        name: "{{ docker_image }}"
-        source: pull
-
-    - name: Stop and remove existing container if present
-      docker_container:
-        name: "{{ container_name }}"
-        state: absent
-        force_kill: true
-        remove_volumes: true
+    - name: Remove old container (if exists)
+      command: docker rm flask-app
       ignore_errors: yes
 
     - name: Run new container
-      docker_container:
-        name: "{{ container_name }}"
-        image: "{{ docker_image }}"
-        state: started
-        restart_policy: always
-        exposed_ports:
-          - "5000"
-        published_ports:
-          - "5000:5000"
+      command: >
+        docker run -d --name flask-app
+        -p 5000:5000
+        harshavardhanjvv/flask-cicd-project:latest
