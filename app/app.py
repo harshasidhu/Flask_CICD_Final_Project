@@ -7,11 +7,12 @@ import time
 
 app = Flask(__name__)
 
-# Get DB connection details from environment variables
-db_host = os.environ.get("DB_HOST", "localhost")
-db_user = os.environ.get("DB_USER", "root")
-db_password = os.environ.get("DB_PASSWORD", "root")
+# ✅ Get DB connection details from environment variables (with correct defaults)
+db_host = os.environ.get("DB_HOST", "db")  # use 'db' — Docker Compose service name
+db_user = os.environ.get("DB_USER", "user")
+db_password = os.environ.get("DB_PASSWORD", "password")
 db_name = os.environ.get("DB_NAME", "cms")
+
 # Database connection
 def get_db_connection():
     connection = mysql.connector.connect(
@@ -37,14 +38,14 @@ def init_db():
             ''')
             conn.commit()
             conn.close()
-            print("✅ Database initialized.")
+            print("✅ Database initialized successfully.")
             break
         except Error as e:
-            print(f"⏳ DB not ready, retrying in 3s... ({i+1}/10)")
+            print(f"⏳ Database not ready (attempt {i+1}/10): {e}")
             time.sleep(3)
     else:
-        print("❌ Failed to connect to DB after 10 retries.")
-        raise RuntimeError("DB initialization failed")
+        print("❌ Failed to connect to database after multiple attempts.")
+        raise RuntimeError("Database initialization failed")
 
 @app.route('/')
 def public():
@@ -53,7 +54,7 @@ def public():
     cursor.execute("SELECT content FROM content ORDER BY id DESC LIMIT 1")
     result = cursor.fetchone()
     conn.close()
-    return render_template("index.html", content=result[0] if result else "No content availble")
+    return render_template("index.html", content=result[0] if result else "No content available")
 
 @app.route('/admin', methods=['GET', 'POST'])
 def admin():
