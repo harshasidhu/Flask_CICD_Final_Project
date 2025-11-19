@@ -7,45 +7,42 @@ import time
 
 app = Flask(__name__)
 
-# ✅ Get DB connection details from environment variables (with correct defaults)
-db_host = os.environ.get("DB_HOST", "db")  # use 'db' — Docker Compose service name
-db_user = os.environ.get("DB_USER", "user")
-db_password = os.environ.get("DB_PASSWORD", "password")
+# Read DB config from environment variables
+db_host = os.environ.get("DB_HOST", "db")
+db_user = os.environ.get("DB_USER", "root")
+db_password = os.environ.get("DB_PASSWORD", "root")
 db_name = os.environ.get("DB_NAME", "cms")
 
-# Database connection
+# DB connection
 def get_db_connection():
-    connection = mysql.connector.connect(
+    return mysql.connector.connect(
         host=db_host,
         user=db_user,
         password=db_password,
         database=db_name
     )
-    return connection
 
-# Create table if not exists with retry logic
+# Initialize database
 def init_db():
-    for i in range(10):  # retry up to 10 times
+    for attempt in range(10):
         try:
             conn = get_db_connection()
             cursor = conn.cursor()
-            cursor.execute('''
+            cursor.execute("""
                 CREATE TABLE IF NOT EXISTS content (
                     id INT AUTO_INCREMENT PRIMARY KEY,
                     content TEXT NOT NULL,
                     timestamp DATETIME DEFAULT CURRENT_TIMESTAMP
                 )
-            ''')
+            """)
             conn.commit()
             conn.close()
             print("✅ Database initialized successfully.")
-            break
+            return
         except Error as e:
-            print(f"⏳ Database not ready (attempt {i+1}/10): {e}")
+            print(f"⏳ Database not ready (attempt {attempt+1}/10): {e}")
             time.sleep(3)
-    else:
-        print("❌ Failed to connect to database after multiple attempts.")
-        raise RuntimeError("Database initialization failed")
+    raise RuntimeError("❌ Failed to initialize database after multiple attempts.")
 
 @app.route('/')
 def public():
@@ -78,6 +75,6 @@ def admin():
 def success():
     return render_template("success.html")
 
-if __name__ == '__main__':
+if __name__ == "__main__":
     init_db()
-    app.run(host="0.0.0.0", port=5000, debug=True)
+    app.run(host="0.0.0.0", port=5000)
